@@ -1,8 +1,8 @@
-import camb
-from camb import model, initialpower
+#import camb
+#from camb import model, initialpower
 
-import pyccl
-
+#import pyccl #pip install ccl
+from classy import Class
 import numpy as np
 from scipy.interpolate import interp1d
 from astropy.cosmology import Planck15 as cosmo
@@ -13,8 +13,25 @@ from scipy.integrate import quad as scipy_int1d
 c=c.to(u.km/u.second)
 
 cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817,'Om':cosmo.Om0,
-                'As':2.12e-09,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965})
+                'As':2.14e-09,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
+                'w':-1,'wa':0})
+cosmo_fid['Oml']=1.-cosmo_fid['Om']-cosmo_fid['Omk']
+
 pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':5000}
+
+class_accuracy_settings={ #from Vanessa. To avoid class errors due to compiler issues.
+                          #https://github.com/lesgourg/class_public/issues/193
+            "k_min_tau0":0.002, #you could try change this
+            "k_max_tau0_over_l_max":3., #you can also try 5 here
+            "k_step_sub":0.015,
+            "k_step_super":0.0001,
+            "k_step_super_reduction":0.1,
+            'k_per_decade_for_pk': 20,
+#             'k_output_values': 2.0,
+            'perturb_sampling_stepsize':0.01,
+            'tol_perturb_integration':1.e-4,
+            'halofit_k_per_decade': 3000. #you could try change this
+            } #class can be annoying. If it crashes randomly, try fiddling with these settings.
 
 class Power_Spectra():
     def __init__(self,cosmo_params=cosmo_fid,pk_params=pk_params,cosmo=cosmo):
@@ -37,7 +54,7 @@ class Power_Spectra():
             return (1+z)/(cosmo.H(z).value)**3
         j=0
         Dz=np.zeros_like(z,dtype='float32')
-        
+
         for i in z:
             Dz[j]=cosmo.H(i).value*scipy_int1d(intf,i,np.inf,epsrel=1.e-6,epsabs=1.e-6)[0]
             j=j+1
@@ -69,7 +86,7 @@ class Power_Spectra():
         nz=len(z)
         ps=np.zeros((nz,pk_params['nk']))
         ps0=[]
-        z0=9.#PS(z0) will be rescaled using growth function when CCL fails. 
+        z0=9.#PS(z0) will be rescaled using growth function when CCL fails.
 
         pyccl_pkf=pyccl.linear_matter_power
         if pk_params['non_linear']==1:
@@ -147,10 +164,59 @@ class Power_Spectra():
             i+=z_step
         return pk,kh
 
+    def class_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
+        #output is in same unit as CAMB
+        if not cosmo_params:
+            cosmo_params=self.cosmo_params
+        if not pk_params:
+            pk_params=self.pk_params
+        kh=np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),
+                               pk_params['nk'])
+        cosmoC=Class()
+        h=cosmo_params['h']
+        class_params={'h':h,'omega_b':cosmo_params['Omb']*h**2,
+                            'omega_cdm':(cosmo_params['Om']-cosmo_params['Omb'])*h**2,
+                            'A_s':cosmo_params['As'],'n_s':cosmo_params['ns'],
+                            'output': 'mPk','z_max_pk':max(z)+0.1,
+                            'P_k_max_1/Mpc':pk_params['kmax']*h,
+                    }
+        if pk_params['non_linear']==1:
+            class_params['non linear']='halofit'
+
+        class_params['N_ur']=3.04 #ultra relativistic species... neutrinos
+        if cosmo_params['mnu']!=0:
+            class_params['N_ur']-=1 #one massive neutrino
+            class_params['m_ncdm']=cosmo_params['mnu']
+        class_params['N_ncdm']=3.04-class_params['N_ur']
+
+        if cosmo_params['w']!=-1:
+            class_params['Omega_fld']=cosmo_params['Oml']
+            class_params['w0_fld']=cosmo_params['w']
+            class_params['wa_fld']=cosmo_params['wa']
+
+
+        for ke in class_accuracy_settings.keys():
+            class_params[ke]=class_accuracy_settings[ke]
+
+        cosmoC=Class()
+        cosmoC.set(class_params)
+        cosmoC.compute()
+
+        k=kh*h #output is in same unit as CAMB
+        pkC=np.array([[cosmoC.pk(ki,zj) for ki in k ]for zj in z])
+        pkC*=h**3
+        s8=cosmoC.sigma8()
+        cosmoC.struct_cleanup()
+        if return_s8:
+            return pkC,kh,s8
+        else:
+            return pkC,kh
+
+
     def cl_z(self,z=[],l=np.arange(2000)+1,pk_params=None,cosmo=None,pk_func=None):
 
         if not pk_func:
-            pk_func=self.camb_pk_too_many_z
+            pk_func=self.class_pk
 
         nz=len(z)
         nl=len(l)
@@ -170,7 +236,7 @@ class Power_Spectra():
                 zs1=[1100],p_zs1=[1],zs2=[1100],p_zs2=[1],
                 pk_params=None,cosmo=None,l=np.arange(2,2001)):
 
-        if log_zl:#bins for z_lens. 
+        if log_zl:#bins for z_lens.
             zl=np.logspace(np.log10(max(zl_min,1.e-4)),np.log10(zl_max),n_zl)
         else:
             zl=np.linspace(zl_min,zl_max,n_zl)
