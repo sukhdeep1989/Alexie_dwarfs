@@ -8,7 +8,6 @@ class hankel_transform():
     def __init__(self,rmin=0.1,rmax=100,kmax=10,kmin=1.e-4,n_zeros=1000,n_zeros_step=1000,
                  j_nu=[0,2],prune_r=0,prune_log_space=True):
         
-
         self.rmin={}
         self.rmax={}
         self.kmax={}
@@ -53,14 +52,14 @@ class hankel_transform():
             r=zeros/self.kmax[j_nu]
             if min(r)>self.rmin[j_nu]:
                 self.kmax[j_nu]=min(zeros)/self.rmin[j_nu]
-                print 'changed kmax to',self.kmax[j_nu],' to cover rmin'
+                print ('changed kmax to',self.kmax[j_nu],' to cover rmin')
                 continue
             elif max(r)<self.rmax[j_nu]:
                 n_zeros+=n_zeros_step
-                print 'j-nu=',j_nu,' not enough zeros to cover rmax, increasing by ',n_zeros_step,' to',n_zeros
+                print ('j-nu=',j_nu,' not enough zeros to cover rmax, increasing by ',n_zeros_step,' to',n_zeros)
             elif min(k)>self.kmin[j_nu]:
                 n_zeros+=n_zeros_step
-                print 'j-nu=',j_nu,' not enough zeros to cover kmin, increasing by ',n_zeros_step,' to',n_zeros
+                print ('j-nu=',j_nu,' not enough zeros to cover kmin, increasing by ',n_zeros_step,' to',n_zeros)
             else:
                 break
         rmin2=r[r<=self.rmin[j_nu]][-1]
@@ -69,7 +68,7 @@ class hankel_transform():
         x*=r>=rmin2
         r=r[x]
         if prune_r!=0:
-            print 'pruning r, log_space,n_f:',prune_log_space,prune_r
+            print ('pruning r, log_space,n_f:',prune_log_space,prune_r)
             N=len(r)
             if prune_log_space:
                 idx=np.unique(np.int64(np.logspace(0,np.log10(N-1),N/prune_r)))#pruning can be worse than prune_r factor due to repeated numbers when logspace number are convereted to int.
@@ -78,9 +77,9 @@ class hankel_transform():
                 idx=np.arange(0,N-1,step=prune_r)
             idx=np.append(idx,[N-1])
             r=r[idx]
-            print 'pruned r:',len(r)
+            print ('pruned r:',len(r))
         r=np.unique(r)
-        print 'nr:',len(r)
+        print ('nr:',len(r))
         J=jn(j_nu,np.outer(r,k))
         J_nu1=jn(j_nu+1,zeros)
         return k,r,J,J_nu1,zeros
