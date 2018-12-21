@@ -95,7 +95,7 @@ class Power_Spectra():
             try:
                 ps[i]= pyccl_pkf(cosmo_ccl,kh,1./(1+z[i]))
             except Exception as err:
-                print 'CCL err',err,z[i]
+                print('CCL err',err,z[i])
                 if not np.any(ps0):
                     ps0=pyccl.linear_matter_power(cosmo_ccl,kh,1./(1.+z0))
                 Dz=self.DZ_int(z=[z0,z[i]])
