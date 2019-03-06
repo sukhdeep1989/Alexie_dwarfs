@@ -1,6 +1,3 @@
-#import camb
-#from camb import model, initialpower
-
 #import pyccl #pip install ccl
 from classy import Class
 import numpy as np
@@ -103,6 +100,8 @@ class Power_Spectra():
         return ps*cosmo_params['h']**3,kh/cosmo_params['h'] #factors of h to get in same units as camb output
 
     def camb_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
+        import camb
+        from camb import model, initialpower
         #Set up a new set of parameters for CAMB
         if not cosmo_params:
             cosmo_params=self.cosmo_params
@@ -141,8 +140,8 @@ class Power_Spectra():
         kh, z2, pk =results.get_matter_power_spectrum(minkh=pk_params['kmin'],
                                                         maxkh=pk_params['kmax'],
                                                         npoints =pk_params['nk'])
-        if not np.all(z2==z_t):
-            raise Exception('CAMB changed z order',z2,z_mocks)
+        if not np.all(np.isclose(z2,z_t,rtol=1.e-5)):
+            raise Exception('CAMB changed z order',z2,z_t)
 
         if return_s8:
             s8=results.get_sigma8()
@@ -231,9 +230,28 @@ class Power_Spectra():
             pk_int=interp1d(lz,pk[i]/DC_i**2,bounds_error=False,fill_value=0)
             cls[i][:]+=pk_int(l)*u.Mpc*(c/(cosmo.efunc(z[i])*cosmo.H0))
         return cls
+    
+    def pk_l_z(self,z=[],l=np.arange(2000)+1,pk_params=None,cosmo=None,pk_func=None):
+
+        if not pk_func:
+            pk_func=self.class_pk
+
+        nz=len(z)
+        nl=len(l)
+
+        pk,kh=pk_func(z=z,pk_params=pk_params)
+
+        cls=np.zeros((nz,nl),dtype='float32')*u.Mpc**2
+        for i in np.arange(nz):
+            DC_i=cosmo.angular_diameter_distance(z[i]).value#because camb k in h/mpc
+            lz=kh*DC_i-0.5
+
+            pk_int=interp1d(lz,pk[i],bounds_error=False,fill_value=0)
+            cls[i][:]+=pk_int(l)*u.Mpc*(c/(cosmo.efunc(z[i])*cosmo.H0))
+        return cls
 
     def kappa_cl(self,zl_min=0,zl_max=1100,n_zl=10,log_zl=False,pk_func=None,
-                zs1=[1100],p_zs1=[1],zs2=[1100],p_zs2=[1],
+                zs1=[1100],p_zs1=[1],zs2=[1100],p_zs2=[1],cl_z_func=None,
                 pk_params=None,cosmo=None,l=np.arange(2,2001)):
 
         if log_zl:#bins for z_lens.
@@ -241,11 +259,15 @@ class Power_Spectra():
         else:
             zl=np.linspace(zl_min,zl_max,n_zl)
 
-        clz=self.cl_z(z=zl,l=l,cosmo=cosmo,pk_params=pk_params,pk_func=pk_func)
+
+        if cl_z_func is None:
+            cl_z_func=self.cl_z
+        clz=cl_z_func(z=zl,l=l,cosmo=cosmo,pk_params=pk_params,pk_func=pk_func)
 
         rho=self.Rho_crit(cosmo=cosmo)*cosmo.Om0
         sigma_c1=rho/self.sigma_crit(zl=zl,zs=zs1,cosmo=cosmo)
         sigma_c2=rho/self.sigma_crit(zl=zl,zs=zs2,cosmo=cosmo)
+
 
         dzl=np.gradient(zl)
         dzs1=np.gradient(zs1) if len(zs1)>1 else 1
